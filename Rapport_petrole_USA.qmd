@@ -1,0 +1,235 @@
+---
+title: "Rapport sur l'Application Shiny d'Analyse des Importations de Pétrole Brut aux États-Unis"
+author: "Goulia Junias - Tébili Stéphanie"
+date: "2024-05-21"
+output: html_document
+---
+
+## lien de l'Application:
+
+<https://gouliajunias.shinyapps.io/import_petrole/>
+
+```{r setup0, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Contexte
+
+Le pétrole brut est une ressource essentielle pour l'économie mondiale, et les États-Unis, en tant que l'un des plus grands consommateurs de pétrole, importent une quantité significative de cette ressource depuis divers pays. Cette application Shiny a été développée pour analyser et visualiser les données d'importation de pétrole brut aux États-Unis de 2009 à janvier 2024.
+
+## Problématique
+
+La gestion et l'analyse des données d'importation de pétrole brut sont cruciales pour comprendre les tendances du marché, les dépendances énergétiques et les dynamiques internationales. La problématique de ce projet est de déterminer comment visualiser et analyser efficacement les données d'importation de pétrole brut aux États-Unis pour identifier les tendances temporelles, les variations par pays d'origine et les différences de qualité du pétrole importé. Plus précisément, nous cherchons à répondre aux questions suivantes :
+
+\- Quelles sont les tendances des importations de pétrole brut aux États-Unis au fil du temps ?
+
+\- Quels sont les principaux pays exportateurs de pétrole brut vers les États-Unis ?
+
+\- Comment la qualité du pétrole importé varie-t-elle selon le pays et l'année ?
+
+## Intérêt et Objectifs
+
+L'Intérêt de cette application est de fournir un outil interactif pour analyser les tendances des importations de pétrole brut aux États-Unis. Les utilisateurs peuvent explorer les données par année, par pays d'origine, et par qualité du pétrole. Aussi acceder à la cartographie et au classement des pays exportateurs de pétrole brut vers les U.S.A.
+
+Les principaux objectifs incluent :
+
+\- Analyser l'évolution des importations de pétrole brut au fil du temps.
+
+\- Explorer les pays d'origine des importations de pétrole brut des États-Unis.
+
+\- Visualiser la répartition des importations par pays et analyser les tendances au fil du temps.
+
+# Méthodologie
+
+## Source des Données
+
+Les données utilisées dans cette application proviennent d'un fichier CSV nommé `data.csv` téléchargeable sur le site de kaggle (<https://www.kaggle.com/datasets/alistairking/u-s-crude-oil-imports>). Ce fichier contient des informations détaillées sur les importations de pétrole brut aux États-Unis, y compris les variables année (year), mois (month), le pays d'origine (originName), la qualité du pétrole (gradeName) et la quantité importée (quantity) auxquelles nous nous sommes intéressez dans cette étude. Les quantités importées enregistrées dans la base de données sont en millier de barils.
+
+## Préparation des Données
+
+Les données ont été importées, nettoyées et formatées pour être utilisées dans l'application Shiny. Les étapes suivantes ont été effectuées :
+
+\- Conversion des colonnes `year`, `month`, `originTypeName` et `quantity` (en millier de barils) en types de données appropriés.
+
+\- Conversion de la variable `month`, où les mois étaient representés par les numeros de mois, nous les avons ramener en noms de mois. pour des raisons particulières, Plutôt que d'utiliser une fonction dédiée, nous avons été obligés de definir un ordre habitraire pour R mais selon l'ordre des mois d'une année.
+
+\- Filtrage des données pour inclure uniquement les importations provenant de pays spécifiques (en excluant les types de lieux non pertinents).
+
+\- Nous avons été cherchés des données géographiques des pays (longitude et latitude) pour le compte de la visualisation sur carte.
+
+\- Au vu des totaux élevés, plus loin nous avons diviser toutes les sommes totales par 1000 pour lisibilité fluide sur les graphiques, Ainsi sur les graphes les observations en ordonnée sont en millions de barils vu qu'elles étaient deja en milliers de barils.
+
+-   **Ci-dessous le code de préparation de la base de donnée dans global.R** :
+
+```{r setup, eval=FALSE}
+# Charger les bibliothèques nécessaires
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(leaflet)
+library(DT)
+getwd()
+# Charger les données et les nettoyer/formatage
+data_import <- read.csv("Données/data.csv")
+data_import <- data_import |>
+  mutate(#year = as.Date(year, format = "%Y"),
+    year= as.numeric(data_import$year),
+    #originName= as.factor(data_import$originName),
+    originTypeName= as.factor(data_import$originTypeName),
+    destinationTypeName= as.factor(data_import$destinationTypeName),
+    #gradeName= as.factor(data_import$gradeName),
+    quantity= as.numeric(data_import$quantity),
+    month = case_when(
+      month == "1" ~ "January",
+      month == "2" ~ "February",
+      month == "3" ~ "March",
+      month == "4" ~ "April",
+      month == "5" ~ "May",
+      month == "6" ~ "June",
+      month == "7" ~ "July",
+      month == "8" ~ "August",
+      month == "9" ~ "September",
+      month == "10" ~ "October",
+      month == "11" ~ "November",
+      month == "12" ~ "December",
+      TRUE ~ as.character(month)  # Garder les valeurs non modifiées
+    ))
+
+# Définissons l'ordre personnalisé des mois, 
+#on n'a pas pu utiliser la fonction dediée month.name à cause d'un problème sur la variable month
+custom_month_order <- c("January", "February", "March", "April", "May", "June",
+                        "July", "August", "September", "October", "November", "December")
+
+# Application de l'ordre personnalisé aux mois dans notre DataFrame
+data_import$month <- factor(data_import$month, levels = custom_month_order, ordered = TRUE)
+
+# Ajouter des coordonnées géographiques pour les pays
+country_coords <- data.frame(
+  country = c("Belize", "Algeria", "Australia", "United Kingdom", "Vietnam", "Syria", "Chad", "Argentina", 
+              "Ecuador", "Kuwait", "Saudi Arabia", "Angola", "Gabon", "Trinidad and Tobago", "China", 
+              "Congo-Brazzaville", "Colombia", "Equatorial Guinea", "Peru", "Azerbaijan", "Canada", 
+              "Guatemala", "Thailand", "Nigeria", "Iraq", "Libya", "Norway", "United Arab Emirates", 
+              "Malaysia", "Russia", "Venezuela", "Brazil", "Mexico", "Mauritania", "Cameroon", "Indonesia", 
+              "Qatar", "Oman", "Egypt", "Cote d'Ivoire", "Bolivia", "Kazakhstan", "Congo-Kinshasa", 
+              "South Africa", "Netherlands", "Ghana", "Yemen", "Italy", "Brunei", "Albania", "Denmark", 
+              "Papua New Guinea", "South Sudan", "Tunisia", "Barbados", "Spain", "Guyana", "Panama", 
+              "The Bahamas"),
+  lat = c(17.1899, 28.0339, -25.2744, 55.3781, 14.0583, 34.8021, 15.4542, -38.4161, -1.8312, 29.3117, 
+          23.8859, -11.2027, -0.8037, 10.6918, 35.8617, -0.228, 4.5709, 1.6508, -9.19, 40.1431, 56.1304, 
+          15.7835, 15.870, 9.082, 33.2232, 26.3351, 60.472, 23.4241, 4.2105, 61.524, 6.4238, -14.235, 
+          23.6345, 21.0079, 12.3547, -0.7893, 25.3548, 21.5126, 26.8206, 7.5399, -16.2902, 48.0196, 
+          -4.0383, -30.5595, 52.1326, 7.9465, 15.5527, 41.8719, 4.5353, 41.1533, 56.2639, -6.31499, 
+          6.877, 33.8869, 13.1939, 40.4637, 4.8604, 8.537, 25.0343),
+  lon = c(-88.4976, 1.6596, 133.7751, -3.436, 108.2772, 39.4667, 18.7322, -63.6167, -78.1834, 47.4818, 
+          45.0792, 17.8739, 11.6094, -61.2225, 104.1954, 15.8277, -74.2973, 10.2679, -75.0152, 47.5769, 
+          -106.3468, -90.2308, 100.9925, 8.6753, 43.6793, 17.2283, 8.4689, 53.8478, 101.9758, 105.3188, 
+          -66.5897, -51.9253, -102.5528, -10.9408, 15.4542, 113.9213, 51.1839, 55.9233, 30.8025, 
+          -5.5471, -63.5887, 66.9237, 21.7587, 22.9375, 5.2913, -1.0232, 48.5164, 12.5674, -2.1311, 
+          20.1683, 134.5825, 30.0672, 10.165, -3.7492, -58.9302, -79.3871, -77.3963, -77.3963, NA)
+)
+#Base de donnée final
+data_import <- data_import %>% 
+  filter(originTypeName == "Country")
+```
+
+# **Interface Utilisateur (UI)**
+
+L'interface utilisateur de l'application comprend plusieurs onglets pour différentes visualisations et analyses :
+
+-   **Accueil** : Une introduction à l'application et un aperçu général de la carte des États-Unis.
+
+-   **Analyse** : Un ensemble de visualisations interactives, y compris des nuages de points, des histogrammes, des séries chronologiques, et des classements des pays exportateurs incluant une interpretation générale pour les graphiques.
+
+-   **Visualisation carte** : Une cartographie des pays et les informations en survol sur la quantité exportée pour une année
+
+-   **DataBase** : le jeu de données néttoyé et formaté
+
+-   **A propos** : autres information et perspectives
+
+# **Logiciel Serveur**
+
+Le serveur de l'application traite les données et génère les visualisations en fonction des sélections de l'utilisateur. Les principales fonctionnalités incluent :
+
+-   Filtrage des données en fonction de l'année, du pays d'origine, et de la qualité du pétrole.
+
+-   Création de graphiques interactifs avec **`plotly`** pour des visualisations dynamiques.
+
+-   Affichage de cartes interactives avec **`leaflet`** pour visualiser la répartition géographique des importations.
+
+# **Résultats**
+
+## **Visualisations (quelques images de l'Appli)**
+
+### **Carte des Etats-unis**
+
+```{r echo=FALSE}
+#library(knitr)
+knitr::include_graphics("image/carte.png")
+
+```
+
+### **Nuage de points**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/nuage.png")
+```
+
+### **Diagramme en barre filtré**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/diag.png")
+```
+
+### **Série chronologique**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/chrono.png")
+```
+
+### **image Classement des pays**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/top.png")
+```
+
+### **Cartographie**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/carto.png")
+```
+
+### **image Base de données**
+
+```{r echo=FALSE}
+knitr::include_graphics("image/baseDonn.png")
+```
+
+# **Conclusion**
+
+## **Synthèse**
+
+Cette application Shiny offre un outil puissant pour l'analyse des importations de pétrole brut aux États-Unis. Elle permet aux utilisateurs d'explorer les données de manière interactive et de visualiser les tendances importantes.
+
+## **Perspectives**
+
+Pour les développements futurs, l'application pourrait être améliorée par :
+
+-   L'ajout de données supplémentaires, telles que les prix du pétrole et les coûts de transport.
+
+-   L'intégration de prédictions basées sur des modèles statistiques pour anticiper les futures tendances des importations.
+
+-   La personnalisation des visualisations pour des analyses plus spécifiques en fonction des besoins des utilisateurs.
+
+## **Références**
+
+<https://www.lrouviere.github.io/TUTO_VISU_R/07-ggplot.html> <https://shiny.posit.co/r/getstarted/shiny-basics/lesson1/index.html> <https://mastering-shiny.org/index.html>
+
+-   Données des importations de pétrole brut : **`data.csv`** <https://www.kaggle.com/datasets/alistairking/u-s-crude-oil-imports>
+
+-   Packages R utilisés : **`shiny`**, **`dplyr`**, **`ggplot2`**, **`plotly`**, **`leaflet`**, **`DT`**
+
+-   Documentation sur Shiny : <https://shiny.rstudio.com/>
+
+-   Documentation sur Plotly : <https://plotly.com/r/>
+
+-   Documentation sur Leaflet : <https://rstudio.github.io/leaflet/>
